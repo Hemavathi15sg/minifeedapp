@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, status
 from database import init_db, get_db
 from schemas import PostCreate, PostUpdate, PostResponse
-from crud import create_post, read_post, read_all_posts, update_post, delete_post
+from crud import create_post, read_post, read_all_posts, update_post, delete_post, search_posts
 
 app = FastAPI(title="MiniFeed API", version="1.0.0")
 
@@ -25,6 +25,14 @@ def get_all_posts():
     """Get all posts."""
     with get_db() as conn:
         posts = read_all_posts(conn)
+        return [post.to_dict() for post in posts]
+
+
+@app.get("/posts/search", response_model=list[PostResponse])
+def search_posts_endpoint(q: str = ""):
+    """Search posts by caption (case-insensitive)."""
+    with get_db() as conn:
+        posts = search_posts(conn, q)
         return [post.to_dict() for post in posts]
 
 

@@ -67,6 +67,17 @@ def update_post(conn, post_id: int, post_data: PostUpdate) -> Post:
     return read_post(conn, post_id)
 
 
+def search_posts(conn, query: str) -> list[Post]:
+    """Search posts by caption (case-insensitive)."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM posts WHERE LOWER(caption) LIKE LOWER(?) ORDER BY created_at DESC",
+        (f"%{query}%",)
+    )
+    rows = cursor.fetchall()
+    return [Post.from_dict(dict(row)) for row in rows]
+
+
 def delete_post(conn, post_id: int) -> bool:
     """Delete a post by ID."""
     cursor = conn.cursor()

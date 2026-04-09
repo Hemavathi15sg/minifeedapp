@@ -12,7 +12,7 @@ def get_connection():
 
 
 def init_db():
-    """Initialize the database with posts table."""
+    """Initialize the database with posts and comments tables."""
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -22,6 +22,16 @@ def init_db():
             caption TEXT NOT NULL,
             image_url TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id INTEGER NOT NULL,
+            body TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
         )
     """)
     

@@ -1,6 +1,6 @@
 from datetime import datetime
-from models import Post
-from schemas import PostCreate, PostUpdate
+from models import Post, Comment
+from schemas import PostCreate, PostUpdate, CommentCreate, CommentUpdate
 
 
 def create_post(conn, post_data: PostCreate) -> Post:
@@ -71,5 +71,72 @@ def delete_post(conn, post_id: int) -> bool:
     """Delete a post by ID."""
     cursor = conn.cursor()
     cursor.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def create_comment(conn, post_id: int, comment_data: CommentCreate) -> Comment:
+    """Create a new comment for a post."""
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO comments (post_id, body, created_at)
+        VALUES (?, ?, ?)
+        """,
+        (post_id, comment_data.body, datetime.now().isoformat())
+    )
+    conn.commit()
+    comment_id = cursor.lastrowid
+
+    cursor.execute("SELECT * FROM comments WHERE id = ?", (comment_id,))
+    row = cursor.fetchone()
+    return Comment.from_dict(dict(row))
+
+
+def read_comment(conn, comment_id: int) -> Comment:
+    """Read a comment by ID."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM comments WHERE id = ?", (comment_id,))
+    row = cursor.fetchone()
+    if not row:
+        return None
+    return Comment.from_dict(dict(row))
+
+
+def read_comments_for_post(conn, post_id: int) -> list[Comment]:
+    """Read all comments for a post."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM comments WHERE post_id = ? ORDER BY created_at ASC",
+        (post_id,)
+    )
+    rows = cursor.fetchall()
+    return [Comment.from_dict(dict(row)) for row in rows]
+
+
+def update_comment(conn, comment_id: int, comment_data: CommentUpdate) -> Comment:
+    """Update a comment by ID."""
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM comments WHERE id = ?", (comment_id,))
+    row = cursor.fetchone()
+    if not row:
+        return None
+
+    current_comment = Comment.from_dict(dict(row))
+    body = comment_data.body if comment_data.body is not None else current_comment.body
+
+    cursor.execute(
+        "UPDATE comments SET body = ? WHERE id = ?",
+        (body, comment_id)
+    )
+    conn.commit()
+    return read_comment(conn, comment_id)
+
+
+def delete_comment(conn, comment_id: int) -> bool:
+    """Delete a comment by ID."""
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM comments WHERE id = ?", (comment_id,))
     conn.commit()
     return cursor.rowcount > 0

@@ -11,8 +11,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from main import app
 from models import Post
-from schemas import PostCreate, PostUpdate
-from crud import create_post, read_post, read_all_posts, update_post, delete_post
+from schemas import PostCreate, PostUpdate, CommentCreate, CommentUpdate
+from crud import (
+    create_post, read_post, read_all_posts, update_post, delete_post,
+    create_comment, read_comment, read_comments_for_post, update_comment, delete_comment,
+)
 
 
 # Test database setup
@@ -31,7 +34,7 @@ def get_test_db():
 
 
 def init_test_db():
-    """Initialize test database with posts table."""
+    """Initialize test database with posts and comments tables."""
     conn = sqlite3.connect(TEST_DB)
     cursor = conn.cursor()
     
@@ -44,6 +47,16 @@ def init_test_db():
         )
     """)
     
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id INTEGER NOT NULL,
+            body TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+        )
+    """)
+    
     conn.commit()
     conn.close()
 
@@ -53,6 +66,7 @@ def clear_test_db():
     if os.path.exists(TEST_DB):
         conn = sqlite3.connect(TEST_DB)
         cursor = conn.cursor()
+        cursor.execute("DELETE FROM comments")
         cursor.execute("DELETE FROM posts")
         conn.commit()
         conn.close()
@@ -516,3 +530,152 @@ class TestPostResponseFormat:
         required_fields = ["id", "caption", "image_url", "created_at"]
         for field in required_fields:
             assert field in data, f"Missing field: {field}"
+
+
+class TestCreateComment:
+    """Tests for POST /posts/{post_id}/comments endpoint."""
+
+    def _create_post(self, client):
+        payload = {"caption": "Post for comments", "image_url": "https://example.com/img.jpg"}
+        response = client.post("/posts", json=payload)
+        return response.json()["id"]
+
+    def test_create_comment_success(self, client):
+        """Test creating a comment successfully."""
+        post_id = self._create_post(client)
+        response = client.post(f"/posts/{post_id}/comments", json={"body": "Nice post!"})
+        assert response.status_code == 201
+        data = response.json()
+        assert data["body"] == "Nice post!"
+        assert data["post_id"] == post_id
+        assert data["id"] is not None
+        assert data["created_at"] is not None
+
+    def test_create_comment_empty_body(self, client):
+        """Test creating a comment with empty body fails."""
+        post_id = self._create_post(client)
+        response = client.post(f"/posts/{post_id}/comments", json={"body": ""})
+        assert response.status_code == 422
+
+    def test_create_comment_missing_body(self, client):
+        """Test creating a comment without body fails."""
+        post_id = self._create_post(client)
+        response = client.post(f"/posts/{post_id}/comments", json={})
+        assert response.status_code == 422
+
+    def test_create_comment_post_not_found(self, client):
+        """Test creating a comment for a non-existent post returns 404."""
+        response = client.post("/posts/999/comments", json={"body": "Hello"})
+        assert response.status_code == 404
+
+
+class TestReadComments:
+    """Tests for GET /posts/{post_id}/comments endpoint."""
+
+    def _create_post(self, client):
+        payload = {"caption": "Post for comments", "image_url": "https://example.com/img.jpg"}
+        return client.post("/posts", json=payload).json()["id"]
+
+    def test_get_comments_empty(self, client):
+        """Test getting comments when none exist."""
+        post_id = self._create_post(client)
+        response = client.get(f"/posts/{post_id}/comments")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_get_comments_success(self, client):
+        """Test getting comments for a post."""
+        post_id = self._create_post(client)
+        client.post(f"/posts/{post_id}/comments", json={"body": "First comment"})
+        client.post(f"/posts/{post_id}/comments", json={"body": "Second comment"})
+        response = client.get(f"/posts/{post_id}/comments")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        assert data[0]["body"] == "First comment"
+        assert data[1]["body"] == "Second comment"
+
+    def test_get_comments_post_not_found(self, client):
+        """Test getting comments for a non-existent post returns 404."""
+        response = client.get("/posts/999/comments")
+        assert response.status_code == 404
+
+    def test_comment_response_fields(self, client):
+        """Test that comment response has all required fields."""
+        post_id = self._create_post(client)
+        client.post(f"/posts/{post_id}/comments", json={"body": "A comment"})
+        response = client.get(f"/posts/{post_id}/comments")
+        comment = response.json()[0]
+        for field in ["id", "post_id", "body", "created_at"]:
+            assert field in comment, f"Missing field: {field}"
+
+
+class TestUpdateComment:
+    """Tests for PUT /posts/{post_id}/comments/{comment_id} endpoint."""
+
+    def _create_post_and_comment(self, client):
+        post_id = client.post("/posts", json={"caption": "p", "image_url": "https://example.com/i.jpg"}).json()["id"]
+        comment_id = client.post(f"/posts/{post_id}/comments", json={"body": "Original"}).json()["id"]
+        return post_id, comment_id
+
+    def test_update_comment_success(self, client):
+        """Test updating a comment successfully."""
+        post_id, comment_id = self._create_post_and_comment(client)
+        response = client.put(f"/posts/{post_id}/comments/{comment_id}", json={"body": "Updated"})
+        assert response.status_code == 200
+        assert response.json()["body"] == "Updated"
+
+    def test_update_comment_not_found(self, client):
+        """Test updating a non-existent comment returns 404."""
+        post_id = client.post("/posts", json={"caption": "p", "image_url": "https://example.com/i.jpg"}).json()["id"]
+        response = client.put(f"/posts/{post_id}/comments/999", json={"body": "x"})
+        assert response.status_code == 404
+
+    def test_update_comment_post_not_found(self, client):
+        """Test updating a comment on a non-existent post returns 404."""
+        response = client.put("/posts/999/comments/1", json={"body": "x"})
+        assert response.status_code == 404
+
+    def test_update_comment_null_body_keeps_original(self, client):
+        """Test that null body update keeps original value."""
+        post_id, comment_id = self._create_post_and_comment(client)
+        response = client.put(f"/posts/{post_id}/comments/{comment_id}", json={"body": None})
+        assert response.status_code == 200
+        assert response.json()["body"] == "Original"
+
+
+class TestDeleteComment:
+    """Tests for DELETE /posts/{post_id}/comments/{comment_id} endpoint."""
+
+    def _create_post_and_comment(self, client):
+        post_id = client.post("/posts", json={"caption": "p", "image_url": "https://example.com/i.jpg"}).json()["id"]
+        comment_id = client.post(f"/posts/{post_id}/comments", json={"body": "To delete"}).json()["id"]
+        return post_id, comment_id
+
+    def test_delete_comment_success(self, client):
+        """Test deleting a comment successfully."""
+        post_id, comment_id = self._create_post_and_comment(client)
+        response = client.delete(f"/posts/{post_id}/comments/{comment_id}")
+        assert response.status_code == 204
+        # Verify it's gone
+        comments = client.get(f"/posts/{post_id}/comments").json()
+        assert all(c["id"] != comment_id for c in comments)
+
+    def test_delete_comment_not_found(self, client):
+        """Test deleting a non-existent comment returns 404."""
+        post_id = client.post("/posts", json={"caption": "p", "image_url": "https://example.com/i.jpg"}).json()["id"]
+        response = client.delete(f"/posts/{post_id}/comments/999")
+        assert response.status_code == 404
+
+    def test_delete_comment_post_not_found(self, client):
+        """Test deleting a comment on a non-existent post returns 404."""
+        response = client.delete("/posts/999/comments/1")
+        assert response.status_code == 404
+
+    def test_delete_comment_idempotency(self, client):
+        """Test that deleting the same comment twice returns 404 on second attempt."""
+        post_id, comment_id = self._create_post_and_comment(client)
+        client.delete(f"/posts/{post_id}/comments/{comment_id}")
+        response = client.delete(f"/posts/{post_id}/comments/{comment_id}")
+        assert response.status_code == 404
+

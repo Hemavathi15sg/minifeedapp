@@ -69,10 +69,11 @@ def update_post(conn, post_id: int, post_data: PostUpdate) -> Post:
 
 def search_posts(conn, query: str) -> list[Post]:
     """Search posts by caption (case-insensitive)."""
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT * FROM posts WHERE LOWER(caption) LIKE LOWER(?) ORDER BY created_at DESC",
-        (f"%{query}%",)
+        "SELECT * FROM posts WHERE LOWER(caption) LIKE LOWER(?) ESCAPE '\\' ORDER BY created_at DESC",
+        (f"%{escaped}%",)
     )
     rows = cursor.fetchall()
     return [Post.from_dict(dict(row)) for row in rows]

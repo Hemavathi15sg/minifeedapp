@@ -162,6 +162,76 @@
         .cancel-btn:hover {
             background: #5a6268;
         }
+        /* Comments */
+        .comments-section {
+            margin-top: 15px;
+            border-top: 1px solid #eee;
+            padding-top: 15px;
+        }
+        .comments-section h4 {
+            font-size: 13px;
+            color: #555;
+            margin-bottom: 10px;
+        }
+        .comment {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 6px 0;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
+        }
+        .comment:last-of-type {
+            border-bottom: none;
+        }
+        .comment-body {
+            flex: 1;
+            line-height: 1.4;
+        }
+        .comment-meta {
+            font-size: 11px;
+            color: #aaa;
+            margin-top: 2px;
+        }
+        .comment-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+            margin-left: 10px;
+        }
+        .comment-actions button {
+            width: auto;
+            padding: 3px 8px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .comment-edit-btn {
+            background: #28a745;
+        }
+        .comment-edit-btn:hover {
+            background: #218838;
+        }
+        .comment-delete-btn {
+            background: #dc3545;
+        }
+        .comment-delete-btn:hover {
+            background: #c82333;
+        }
+        .add-comment-form {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .add-comment-form input {
+            flex: 1;
+            padding: 7px 10px;
+            font-size: 13px;
+        }
+        .add-comment-form button {
+            width: auto;
+            padding: 7px 14px;
+            font-size: 13px;
+        }
     </style>
 </head>
 <body>
@@ -206,9 +276,28 @@
         </div>
     </div>
 
+    <!-- Edit Comment Modal -->
+    <div class="edit-form" id="editCommentForm">
+        <div class="edit-modal">
+            <h2>Edit Comment</h2>
+            <form id="editCommentFormInner">
+                <div class="form-group">
+                    <label for="editCommentBody">Comment</label>
+                    <textarea id="editCommentBody" required style="min-height:60px;"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="cancel-btn" onclick="closeEditCommentForm()">Cancel</button>
+                    <button type="submit">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const API_URL = "http://localhost:8000/posts";
         let editingId = null;
+        let editingCommentId = null;
+        let editingCommentPostId = null;
 
         document.getElementById("postForm").addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -250,6 +339,24 @@
             }
         });
 
+        document.getElementById("editCommentFormInner").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const body = document.getElementById("editCommentBody").value;
+            try {
+                const response = await fetch(`${API_URL}/${editingCommentPostId}/comments/${editingCommentId}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ body }),
+                });
+                if (response.ok) {
+                    closeEditCommentForm();
+                    await loadCommentsForPost(editingCommentPostId);
+                }
+            } catch (error) {
+                console.error("Error updating comment:", error);
+            }
+        });
+
         async function loadPosts() {
             try {
                 const response = await fetch(API_URL);
@@ -262,7 +369,7 @@
                 }
 
                 postsList.innerHTML = posts.map(post => `
-                    <div class="post">
+                    <div class="post" id="post-${post.id}">
                         <div class="post-header">
                             <span class="post-date">${new Date(post.created_at).toLocaleString()}</span>
                         </div>
@@ -272,10 +379,99 @@
                             <button class="edit-btn" onclick="openEditForm(${post.id}, '${escapeAttr(post.caption)}', '${escapeAttr(post.image_url)}')">Edit</button>
                             <button class="delete-btn" onclick="deletePost(${post.id})">Delete</button>
                         </div>
+                        <div class="comments-section" id="comments-${post.id}">
+                            <h4>Comments</h4>
+                            <div id="comments-list-${post.id}"></div>
+                            <form class="add-comment-form" onsubmit="addComment(event, ${post.id})">
+                                <input type="text" placeholder="Add a comment…" id="comment-input-${post.id}" required>
+                                <button type="submit">Post</button>
+                            </form>
+                        </div>
+                    </div>
+                `).join("");
+
+                for (const post of posts) {
+                    await loadCommentsForPost(post.id);
+                }
+            } catch (error) {
+                console.error("Error loading posts:", error);
+            }
+        }
+
+        async function loadCommentsForPost(postId) {
+            try {
+                const response = await fetch(`${API_URL}/${postId}/comments`);
+                const comments = await response.json();
+                const container = document.getElementById(`comments-list-${postId}`);
+                if (!container) return;
+
+                if (!Array.isArray(comments) || comments.length === 0) {
+                    container.innerHTML = '';
+                    return;
+                }
+
+                container.innerHTML = comments.map(c => `
+                    <div class="comment" id="comment-${c.id}">
+                        <div>
+                            <div class="comment-body">${escapeHtml(c.body)}</div>
+                            <div class="comment-meta">${new Date(c.created_at).toLocaleString()}</div>
+                        </div>
+                        <div class="comment-actions">
+                            <button class="comment-edit-btn" onclick="openEditCommentForm(${postId}, ${c.id}, '${escapeAttr(c.body)}')">Edit</button>
+                            <button class="comment-delete-btn" onclick="deleteComment(${postId}, ${c.id})">Delete</button>
+                        </div>
                     </div>
                 `).join("");
             } catch (error) {
-                console.error("Error loading posts:", error);
+                console.error("Error loading comments:", error);
+            }
+        }
+
+        async function addComment(e, postId) {
+            e.preventDefault();
+            const input = document.getElementById(`comment-input-${postId}`);
+            const body = input.value.trim();
+            if (!body) return;
+            try {
+                const response = await fetch(`${API_URL}/${postId}/comments`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ body }),
+                });
+                if (response.ok) {
+                    input.value = "";
+                    await loadCommentsForPost(postId);
+                }
+            } catch (error) {
+                console.error("Error adding comment:", error);
+            }
+        }
+
+        function openEditCommentForm(postId, commentId, body) {
+            editingCommentPostId = postId;
+            editingCommentId = commentId;
+            document.getElementById("editCommentBody").value = body;
+            document.getElementById("editCommentForm").classList.add("active");
+        }
+
+        function closeEditCommentForm() {
+            editingCommentPostId = null;
+            editingCommentId = null;
+            document.getElementById("editCommentForm").classList.remove("active");
+            document.getElementById("editCommentFormInner").reset();
+        }
+
+        async function deleteComment(postId, commentId) {
+            if (!confirm("Delete this comment?")) return;
+            try {
+                const response = await fetch(`${API_URL}/${postId}/comments/${commentId}`, {
+                    method: "DELETE",
+                });
+                if (response.ok) {
+                    await loadCommentsForPost(postId);
+                }
+            } catch (error) {
+                console.error("Error deleting comment:", error);
             }
         }
 

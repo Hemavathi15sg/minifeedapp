@@ -24,3 +24,24 @@ class PostResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class CommentCreate(BaseModel):
+    """Schema for creating a new comment."""
+    body: str = Field(..., min_length=1, description="Comment body")
+
+
+class CommentUpdate(BaseModel):
+    """Schema for updating a comment."""
+    body: Optional[str] = Field(None, description="Comment body")
+
+
+class CommentResponse(BaseModel):
+    """Schema for comment response."""
+    id: int
+    post_id: int
+    body: str
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
